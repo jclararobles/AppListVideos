@@ -2,9 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { View, TextInput, Button, FlatList, Text, Modal, TouchableOpacity, Image, Switch, StyleSheet } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { db } from '../firebaseconfig';
-import { collection, addDoc, getDocs, query, where, deleteDoc, doc } from 'firebase/firestore';
+import { collection, addDoc, getDocs, query, where, deleteDoc, doc, updateDoc } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
-import { useNavigation } from '@react-navigation/native';
+import { FontAwesome } from '@expo/vector-icons';
 
 const AddVideoScreen = () => {
   const [title, setTitle] = useState('');
@@ -13,10 +13,10 @@ const AddVideoScreen = () => {
   const [isInstagram, setIsInstagram] = useState(false);
   const [videos, setVideos] = useState([]);
   const [isModalVisible, setIsModalVisible] = useState(false);
-  const [isWebViewVisible, setIsWebViewVisible] = useState(false);
+  const [isFullScreen, setIsFullScreen] = useState(false);
   const [selectedUrl, setSelectedUrl] = useState('');
   const auth = getAuth();
-  const navigation = useNavigation();
+  const [isFavorite, setIsFavorite] = useState(false);
 
   useEffect(() => {
     fetchVideos();
@@ -27,10 +27,7 @@ const AddVideoScreen = () => {
     if (userId) {
       const q = query(collection(db, 'videos'), where('userId', '==', userId));
       const querySnapshot = await getDocs(q);
-      const videoList = [];
-      querySnapshot.forEach((doc) => {
-        videoList.push({ id: doc.id, ...doc.data() });
-      });
+      const videoList = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setVideos(videoList);
     }
   };
@@ -39,14 +36,8 @@ const AddVideoScreen = () => {
     try {
       const userId = auth.currentUser?.uid;
       if (userId && title && description && url) {
-        let thumbnailUrl = null;
-
-        if (!isInstagram) {
-          thumbnailUrl = getYouTubeThumbnail(url);
-        } else {
-          thumbnailUrl = getInstagramThumbnail(url);
-        }
-
+        const thumbnailUrl = isInstagram ? getInstagramThumbnail() : getYouTubeThumbnail(url);
+  
         if (thumbnailUrl) {
           await addDoc(collection(db, 'videos'), {
             userId,
@@ -55,6 +46,7 @@ const AddVideoScreen = () => {
             url,
             platform: isInstagram ? 'Instagram' : 'YouTube',
             thumbnail: thumbnailUrl,
+            isFavorite: false, // Por defecto, no es favorito.
           });
           setTitle('');
           setDescription('');
@@ -66,105 +58,141 @@ const AddVideoScreen = () => {
           alert('Error al generar la miniatura');
         }
       } else {
-        alert('Please fill in all fields');
+        alert('Por favor, completa todos los campos');
       }
     } catch (error) {
-      console.error('Error adding video: ', error.message);
+      console.error('Error añadiendo el video: ', error.message);
+    }
+  };
+
+  const handleToggleFavorite = async (id, currentIsFavorite) => {
+    try {
+      const videoRef = doc(db, 'videos', id);
+      await updateDoc(videoRef, { isFavorite: !currentIsFavorite });
+
+      // Actualizar el estado local para reflejar el cambio inmediatamente
+      fetchVideos();
+    } catch (error) {
+      console.error('Error al actualizar el video como favorito: ', error.message);
     }
   };
 
   const handleDeleteVideo = async (id) => {
     try {
       await deleteDoc(doc(db, 'videos', id));
-      fetchVideos();
+      fetchVideos(); // Refrescar la lista de videos después de la eliminación.
     } catch (error) {
-      console.error('Error deleting video: ', error.message);
+      console.error('Error eliminando el video: ', error.message);
     }
   };
+  
 
   const handlePlayVideo = (url) => {
     setSelectedUrl(url);
-    setIsWebViewVisible(true);
+    setIsFullScreen(true);
   };
 
-  const handleCloseWebView = () => {
-    setIsWebViewVisible(false);
+  const handleCloseFullScreen = () => {
+    setIsFullScreen(false);
     setSelectedUrl('');
   };
 
   const getYouTubeThumbnail = (url) => {
-    const match = url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/ ]{11})/);
-    if (match && match[1]) {
-      const videoId = match[1];
-      return `https://img.youtube.com/vi/${videoId}/0.jpg`;
-    }
-    return null;
+    const match = url.match(/(?:youtube\.com\/(?:[^\/]+\/[^\/]+\/|(?:v|embed)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/ ]{11})/);
+    return match ? `https://img.youtube.com/vi/${match[1]}/0.jpg` : null;
   };
 
-  const getInstagramThumbnail = (url) => {
-    return 'https://via.placeholder.com/200';
+  const getInstagramThumbnail = () => {
+    return Image.resolveAssetSource(require('../assets/instagram_thumbnail.jpg')).uri;
   };
 
   return (
     <View style={styles.container}>
-      <TouchableOpacity style={styles.addButton} onPress={() => setIsModalVisible(true)}>
-        <Text style={styles.addButtonText}>+</Text>
-      </TouchableOpacity>
-
-      <Modal visible={isModalVisible} transparent={true} animationType="slide">
-        <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
-            <TextInput placeholder="Title" value={title} onChangeText={setTitle} style={styles.input} placeholderTextColor="#003049" />
-            <TextInput placeholder="Description" value={description} onChangeText={setDescription} style={styles.input} placeholderTextColor="#003049" />
-            <TextInput placeholder="URL" value={url} onChangeText={setUrl} style={styles.input} placeholderTextColor="#003049" />
-            <View style={styles.switchContainer}>
-              <Text style={styles.switchLabel}>Is it from Instagram?</Text>
-              <Switch value={isInstagram} onValueChange={setIsInstagram} trackColor={{ true: '#fcbf49', false: '#eae2b7' }} thumbColor="#003049" />
-            </View>
-            <View style={styles.buttonGroup}>
-              <TouchableOpacity style={[styles.button, styles.addButton]} onPress={handleAddVideo}>
-                <Text style={styles.buttonText}>Add</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.button, styles.cancelButton]} onPress={() => setIsModalVisible(false)}>
-                <Text style={styles.buttonText}>Cancel</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      {isWebViewVisible && (
-        <View style={styles.webViewContainer}>
-          <TouchableOpacity style={styles.closeButton} onPress={handleCloseWebView}>
-            <Text style={styles.closeButtonText}>Close</Text>
+      {isFullScreen ? (
+        <View style={styles.fullScreenContainer}>
+          <TouchableOpacity style={styles.closeButton} onPress={handleCloseFullScreen}>
+            <Text style={styles.closeButtonText}>Cerrar</Text>
           </TouchableOpacity>
-          <WebView source={{ uri: selectedUrl }} style={styles.webView} />
+          <TouchableOpacity style={styles.backButton} onPress={() => setIsFullScreen(false)}>
+            <Text style={styles.backButtonText}>Volver</Text>
+          </TouchableOpacity>
+          <WebView source={{ uri: selectedUrl }} style={styles.fullScreenWebView} />
         </View>
-      )}
+      ) : (
+        <>
+          <FlatList
+            data={videos}
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }) => (
+              <View style={styles.videoItem}>
+                <Image source={{ uri: item.thumbnail }} style={styles.videoThumbnail} />
+                <Text style={styles.videoTitle}>{item.title}</Text>
+                <Text style={styles.descriptionText}>{item.description}</Text>
+                <Text style={styles.platformText}>Plataforma: {item.platform}</Text>
+                <View style={styles.buttonContainer}>
+                  <TouchableOpacity style={[styles.button, styles.playButton]} onPress={() => handlePlayVideo(item.url)}>
+                    <Text style={styles.buttonText}>Reproducir</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.button, styles.deleteButton]} onPress={() => handleDeleteVideo(item.id)}>
+                    <Text style={styles.buttonText}>Eliminar</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => handleToggleFavorite(item.id, item.isFavorite)}>
+                    <FontAwesome name={item.isFavorite ? 'heart' : 'heart-o'} size={24} color={item.isFavorite ? 'red' : 'black'} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+          />
+          <TouchableOpacity style={styles.fabButton} onPress={() => setIsModalVisible(true)}>
+            <Text style={styles.fabText}>+</Text>
+          </TouchableOpacity>
 
-      <FlatList
-        data={videos}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => {
-          const thumbnailUrl = item.platform === 'YouTube' ? getYouTubeThumbnail(item.url) : getInstagramThumbnail(item.url);
-          return (
-            <View style={styles.videoItem}>
-              {thumbnailUrl && <Image source={{ uri: thumbnailUrl }} style={styles.videoThumbnail} />}
-              <Text style={styles.videoTitle}>{item.title}</Text>
-              <Text style={styles.descriptionText}>{item.description}</Text>
-              <Text style={styles.platformText}>Platform: {item.platform}</Text>
-              <View style={styles.buttonContainer}>
-                <TouchableOpacity style={[styles.button, styles.playButton]} onPress={() => handlePlayVideo(item.url)}>
-                  <Text style={styles.buttonText}>Play</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.button, styles.deleteButton]} onPress={() => handleDeleteVideo(item.id)}>
-                  <Text style={styles.buttonText}>Delete</Text>
-                </TouchableOpacity>
+          <Modal visible={isModalVisible} transparent={true} animationType="slide">
+            <View style={styles.modalContainer}>
+              <View style={styles.modalContent}>
+                <TextInput
+                  placeholder="Título"
+                  value={title}
+                  onChangeText={setTitle}
+                  style={styles.input}
+                  placeholderTextColor="#003049"
+                />
+                <TextInput
+                  placeholder="Descripción"
+                  value={description}
+                  onChangeText={setDescription}
+                  style={styles.input}
+                  placeholderTextColor="#003049"
+                />
+                <TextInput
+                  placeholder="URL"
+                  value={url}
+                  onChangeText={setUrl}
+                  style={styles.input}
+                  placeholderTextColor="#003049"
+                />
+                <View style={styles.switchContainer}>
+                  <Text style={styles.switchLabel}>¿Es de Instagram?</Text>
+                  <Switch
+                    value={isInstagram}
+                    onValueChange={setIsInstagram}
+                    trackColor={{ true: '#fcbf49', false: '#eae2b7' }}
+                    thumbColor="#003049"
+                  />
+                </View>
+                <View style={styles.buttonGroup}>
+                  <TouchableOpacity style={[styles.button, styles.addButton]} onPress={handleAddVideo}>
+                    <Text style={styles.buttonText}>Añadir</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.button, styles.cancelButton]} onPress={() => setIsModalVisible(false)}>
+                    <Text style={styles.buttonText}>Cancelar</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             </View>
-          );
-        }}
-      />
+          </Modal>
+        </>
+      )}
     </View>
   );
 };
@@ -172,23 +200,28 @@ const AddVideoScreen = () => {
 const styles = StyleSheet.create({
   container: {
     padding: 20,
-    backgroundColor: '#eae2b7',
+    backgroundColor: '#fefae0',
     flex: 1,
+    position: 'relative',
   },
-  addButton: {
+  fabButton: {
+    position: 'absolute',
+    bottom: 20,
+    right: 20,
     width: 60,
     height: 60,
-    backgroundColor: '#f77f00',
+    backgroundColor: '#d4a373',
     borderRadius: 30,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#003049',
-    shadowOpacity: 0.3,
-    shadowRadius: 5,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 5,
+    shadowColor: '#000',
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
+    zIndex: 10,
   },
-  addButtonText: {
+  fabText: {
     fontSize: 36,
     color: '#ffffff',
     fontWeight: 'bold',
@@ -203,13 +236,13 @@ const styles = StyleSheet.create({
     width: '90%',
     maxWidth: 400,
     padding: 20,
-    backgroundColor: '#ffffff',
+    backgroundColor: '#faedcd',
     borderRadius: 10,
     elevation: 5,
   },
   input: {
     borderBottomWidth: 1,
-    borderBottomColor: '#003049',
+    borderBottomColor: '#ccd5ae',
     marginBottom: 10,
     padding: 10,
     fontSize: 16,
@@ -230,17 +263,24 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   button: {
-    borderRadius: 5,
     padding: 10,
+    borderRadius: 5,
     alignItems: 'center',
     justifyContent: 'center',
-    elevation: 3,
+    flex: 1,
+    marginHorizontal: 5,
   },
   addButton: {
-    backgroundColor: '#f77f00',
+    backgroundColor: '#d4a373',
   },
   cancelButton: {
-    backgroundColor: '#003049',
+    backgroundColor: '#e9edc9',
+  },
+  playButton: {
+    backgroundColor: '#ccd5ae',
+  },
+  deleteButton: {
+    backgroundColor: '#d62828',
   },
   buttonText: {
     color: '#ffffff',
@@ -248,64 +288,63 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   videoItem: {
-    backgroundColor: '#ffffff',
-    borderRadius: 10,
-    marginBottom: 15,
-    padding: 15,
+    marginBottom: 20,
+    backgroundColor: '#e9edc9',
+    borderRadius: 8,
+    padding: 10,
+    shadowColor: '#000',
+    shadowOpacity: 0.5,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
     elevation: 3,
   },
   videoThumbnail: {
     width: '100%',
     height: 200,
-    borderRadius: 10,
-    marginBottom: 10,
+    borderRadius: 8,
   },
   videoTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#003049',
+    marginVertical: 5,
   },
   descriptionText: {
     fontSize: 14,
     color: '#003049',
-    marginBottom: 5,
   },
   platformText: {
-    fontSize: 12,
-    color: '#555',
-    marginBottom: 10,
+    fontSize: 14,
+    color: '#003049',
+    marginBottom: 5,
   },
   buttonContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
-  playButton: {
-    backgroundColor: '#003049',
-  },
-  deleteButton: {
-    backgroundColor: '#e63946',
-  },
-  webViewContainer: {
+  fullScreenContainer: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    backgroundColor: '#000',
   },
   closeButton: {
-    backgroundColor: '#f77f00',
+    position: 'absolute',
+    top: 20,
+    left: 20,
+    backgroundColor: '#007BFF',
+    borderRadius: 30,
     padding: 10,
-    alignSelf: 'flex-end',
-    borderRadius: 5,
-    margin: 15,
+    zIndex: 10,
+    borderColor: '#ffffff', // Borde blanco para mejor visibilidad
+    borderWidth: 1, // Borde para definir el botón
   },
   closeButtonText: {
-    color: '#ffffff',
-    fontWeight: 'bold',
+    color: '#fff',
     fontSize: 16,
+    fontWeight: 'bold',
   },
-  webView: {
+  fullScreenWebView: {
     flex: 1,
-    borderRadius: 10,
-    overflow: 'hidden',
   },
 });
 
 export default AddVideoScreen;
+
