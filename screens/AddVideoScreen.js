@@ -17,6 +17,14 @@ const AddVideoScreen = () => {
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [selectedUrl, setSelectedUrl] = useState('');
   const auth = getAuth();
+  const [date, setDate] = useState(new Date().toLocaleString());
+
+  // Formatear la fecha para mostrarla de forma legible
+  const formatDate = (date) => {
+    const options = { year: 'numeric', month: 'long', day: 'numeric' };
+    const formattedDate = new Date(date).toLocaleDateString('es-ES', options);
+    return formattedDate;
+  };
 
   useFocusEffect(
     React.useCallback(() => {
@@ -39,16 +47,21 @@ const AddVideoScreen = () => {
       const userId = auth.currentUser?.uid;
       if (userId && title && description && url) {
         const thumbnailUrl = isInstagram ? getInstagramThumbnail() : getYouTubeThumbnail(url);
-  
+
         if (thumbnailUrl) {
+          const currentDate = new Date();
+          console.log("Fecha actual: ", currentDate); 
+
           await addDoc(collection(db, 'videos'), {
             userId,
             title,
             description,
             url,
-            platform: isInstagram ? 'Instagram' : 'YouTube', // Aquí se actualiza la plataforma
+            platform: isInstagram ? 'Instagram' : 'YouTube',
             thumbnail: thumbnailUrl,
+            date: currentDate.toISOString(), 
           });
+
           setTitle('');
           setDescription('');
           setUrl('');
@@ -65,7 +78,7 @@ const AddVideoScreen = () => {
       console.error('Error añadiendo el video: ', error.message);
     }
   };
-  
+
   const handleDeleteVideo = async (id) => {
     try {
       await deleteDoc(doc(db, 'videos', id));
@@ -93,22 +106,18 @@ const AddVideoScreen = () => {
   const getInstagramThumbnail = () => {
     return Image.resolveAssetSource(require('../assets/instagram_thumbnail.jpg')).uri;
   };
-  
 
   const handleBack = () => {
-    navigation.goBack();  // Vuelve a la pantalla anterior
+    navigation.goBack();
   };
 
-
   return (
-     <View style={styles.container}>
+    <View style={styles.container}>
       {isFullScreen ? (
         <View style={styles.fullScreenContainer}>
-      <TouchableOpacity style={styles.closeButton} onPress={handleCloseFullScreen}>
-  <Text style={styles.closeButtonText}>GoBack</Text>
-</TouchableOpacity>
-
-      
+          <TouchableOpacity style={styles.closeButton} onPress={handleCloseFullScreen}>
+            <Text style={styles.closeButtonText}>GoBack</Text>
+          </TouchableOpacity>
           <WebView source={{ uri: selectedUrl }} style={styles.fullScreenWebView} />
         </View>
       ) : (
@@ -122,6 +131,12 @@ const AddVideoScreen = () => {
                 <Text style={styles.videoTitle}>{item.title}</Text>
                 <Text style={styles.descriptionText}>{item.description}</Text>
                 <Text style={styles.platformText}>Plataforma: {item.platform}</Text>
+                {/* Aquí se formatea la fecha */}
+                            <Text style={styles.videoItem}>
+              <Text style={styles.dateContainer}>
+                <Text style={styles.dateText}>{formatDate(item.date)}</Text>
+              </Text>
+            </Text>
                 <View style={styles.buttonContainer}>
                   <TouchableOpacity style={[styles.button, styles.playButton]} onPress={() => handlePlayVideo(item.url)}>
                     <Text style={styles.buttonText}>Play</Text>
@@ -129,7 +144,6 @@ const AddVideoScreen = () => {
                   <TouchableOpacity style={[styles.button, styles.deleteButton]} onPress={() => handleDeleteVideo(item.id)}>
                     <Text style={styles.buttonText}>Delete</Text>
                   </TouchableOpacity>
-        
                 </View>
               </View>
             )}
@@ -137,14 +151,10 @@ const AddVideoScreen = () => {
           <TouchableOpacity style={styles.fabButton} onPress={() => setIsModalVisible(true)}>
             <Text style={styles.fabText}>+</Text>
           </TouchableOpacity>
-
           <Modal visible={isModalVisible} transparent={true} animationType="slide">
             <View style={styles.modalContainer}>
               <View style={styles.modalContent}>
-                {/* Aquí agregamos la cruz para cerrar el modal en la parte superior derecha */}
-                <TouchableOpacity style={styles.closeButtonModal} onPress={() => setIsModalVisible(false)}>
-                </TouchableOpacity>
-
+                <TouchableOpacity style={styles.closeButtonModal} onPress={() => setIsModalVisible(false)} />
                 <TextInput
                   placeholder="Título"
                   value={title}
@@ -166,7 +176,7 @@ const AddVideoScreen = () => {
                   style={styles.input}
                   placeholderTextColor="#003049"
                 />
-               <View style={styles.switchContainer}>
+                <View style={styles.switchContainer}>
                   <Text style={styles.switchLabel}>Select YouTube or Instagram</Text>
                   <Switch
                     value={isInstagram}
@@ -176,7 +186,6 @@ const AddVideoScreen = () => {
                   />
                   <Text style={styles.switchLabel}>{isInstagram ? "Instagram" : "YouTube"}</Text>
                 </View>
-
                 <View style={styles.buttonGroup}>
                   <TouchableOpacity style={[styles.button, styles.addButton]} onPress={handleAddVideo}>
                     <Text style={styles.buttonText}>Añadir</Text>
@@ -331,11 +340,11 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     backgroundColor: '#003049',
     paddingVertical: 10,
-    paddingHorizontal: 10,
+    paddingHorizontal: 20,
     borderRadius: 5,
     alignSelf: 'flex-start',  // Alineación a la izquierda
     marginBottom: 10,
-    marginLeft:6 // Ajuste el margen izquierdo si necesitas más espacio
+    marginLeft:0 // Ajuste el margen izquierdo si necesitas más espacio
   },
   
   buttonContainer: {
@@ -369,6 +378,21 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
   },
+  dateContainer: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',  // Alinea a la derecha
+    marginTop: 10,
+  },
+  
+  dateText: {
+    fontSize: 14,
+    color: '#003049',
+    fontStyle: 'italic',
+    padding: 5,
+    borderRadius: 5,  // Bordes redondeados
+    marginRight: 10,  // Margen derecho
+  },
+  
   
 });
 
