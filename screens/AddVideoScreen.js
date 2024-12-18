@@ -2,9 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { View, TextInput, Button, FlatList, Text, Modal, TouchableOpacity, Image, Switch, StyleSheet } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { db } from '../firebaseconfig';
-import { collection, addDoc, getDocs, query, where, deleteDoc, doc, updateDoc } from 'firebase/firestore';
+import { collection, addDoc, getDocs, query, where, deleteDoc, doc } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
-import { FontAwesome } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
+
 
 const AddVideoScreen = () => {
   const [title, setTitle] = useState('');
@@ -16,11 +17,12 @@ const AddVideoScreen = () => {
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [selectedUrl, setSelectedUrl] = useState('');
   const auth = getAuth();
-  const [isFavorite, setIsFavorite] = useState(false);
 
-  useEffect(() => {
-    fetchVideos();
-  }, []);
+  useFocusEffect(
+    React.useCallback(() => {
+      fetchVideos();
+    }, [])
+  );
 
   const fetchVideos = async () => {
     const userId = auth.currentUser?.uid;
@@ -44,9 +46,8 @@ const AddVideoScreen = () => {
             title,
             description,
             url,
-            platform: isInstagram ? 'Instagram' : 'YouTube',
+            platform: isInstagram ? 'Instagram' : 'YouTube', // Aquí se actualiza la plataforma
             thumbnail: thumbnailUrl,
-            isFavorite: false, // Por defecto, no es favorito.
           });
           setTitle('');
           setDescription('');
@@ -64,28 +65,15 @@ const AddVideoScreen = () => {
       console.error('Error añadiendo el video: ', error.message);
     }
   };
-
-  const handleToggleFavorite = async (id, currentIsFavorite) => {
-    try {
-      const videoRef = doc(db, 'videos', id);
-      await updateDoc(videoRef, { isFavorite: !currentIsFavorite });
-
-      // Actualizar el estado local para reflejar el cambio inmediatamente
-      fetchVideos();
-    } catch (error) {
-      console.error('Error al actualizar el video como favorito: ', error.message);
-    }
-  };
-
+  
   const handleDeleteVideo = async (id) => {
     try {
       await deleteDoc(doc(db, 'videos', id));
-      fetchVideos(); // Refrescar la lista de videos después de la eliminación.
+      fetchVideos();
     } catch (error) {
       console.error('Error eliminando el video: ', error.message);
     }
   };
-  
 
   const handlePlayVideo = (url) => {
     setSelectedUrl(url);
@@ -105,17 +93,22 @@ const AddVideoScreen = () => {
   const getInstagramThumbnail = () => {
     return Image.resolveAssetSource(require('../assets/instagram_thumbnail.jpg')).uri;
   };
+  
+
+  const handleBack = () => {
+    navigation.goBack();  // Vuelve a la pantalla anterior
+  };
+
 
   return (
-    <View style={styles.container}>
+     <View style={styles.container}>
       {isFullScreen ? (
         <View style={styles.fullScreenContainer}>
-          <TouchableOpacity style={styles.closeButton} onPress={handleCloseFullScreen}>
-            <Text style={styles.closeButtonText}>Cerrar</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.backButton} onPress={() => setIsFullScreen(false)}>
-            <Text style={styles.backButtonText}>Volver</Text>
-          </TouchableOpacity>
+      <TouchableOpacity style={styles.closeButton} onPress={handleCloseFullScreen}>
+  <Text style={styles.closeButtonText}>GoBack</Text>
+</TouchableOpacity>
+
+      
           <WebView source={{ uri: selectedUrl }} style={styles.fullScreenWebView} />
         </View>
       ) : (
@@ -131,14 +124,12 @@ const AddVideoScreen = () => {
                 <Text style={styles.platformText}>Plataforma: {item.platform}</Text>
                 <View style={styles.buttonContainer}>
                   <TouchableOpacity style={[styles.button, styles.playButton]} onPress={() => handlePlayVideo(item.url)}>
-                    <Text style={styles.buttonText}>Reproducir</Text>
+                    <Text style={styles.buttonText}>Play</Text>
                   </TouchableOpacity>
                   <TouchableOpacity style={[styles.button, styles.deleteButton]} onPress={() => handleDeleteVideo(item.id)}>
-                    <Text style={styles.buttonText}>Eliminar</Text>
+                    <Text style={styles.buttonText}>Delete</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity onPress={() => handleToggleFavorite(item.id, item.isFavorite)}>
-                    <FontAwesome name={item.isFavorite ? 'heart' : 'heart-o'} size={24} color={item.isFavorite ? 'red' : 'black'} />
-                  </TouchableOpacity>
+        
                 </View>
               </View>
             )}
@@ -150,6 +141,10 @@ const AddVideoScreen = () => {
           <Modal visible={isModalVisible} transparent={true} animationType="slide">
             <View style={styles.modalContainer}>
               <View style={styles.modalContent}>
+                {/* Aquí agregamos la cruz para cerrar el modal en la parte superior derecha */}
+                <TouchableOpacity style={styles.closeButtonModal} onPress={() => setIsModalVisible(false)}>
+                </TouchableOpacity>
+
                 <TextInput
                   placeholder="Título"
                   value={title}
@@ -171,15 +166,17 @@ const AddVideoScreen = () => {
                   style={styles.input}
                   placeholderTextColor="#003049"
                 />
-                <View style={styles.switchContainer}>
-                  <Text style={styles.switchLabel}>¿Es de Instagram?</Text>
+               <View style={styles.switchContainer}>
+                  <Text style={styles.switchLabel}>Select YouTube or Instagram</Text>
                   <Switch
                     value={isInstagram}
                     onValueChange={setIsInstagram}
                     trackColor={{ true: '#fcbf49', false: '#eae2b7' }}
                     thumbColor="#003049"
                   />
+                  <Text style={styles.switchLabel}>{isInstagram ? "Instagram" : "YouTube"}</Text>
                 </View>
+
                 <View style={styles.buttonGroup}>
                   <TouchableOpacity style={[styles.button, styles.addButton]} onPress={handleAddVideo}>
                     <Text style={styles.buttonText}>Añadir</Text>
@@ -304,19 +301,43 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   videoTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: 'bold',
     marginVertical: 5,
+    color: '#003049', // Color más oscuro para el título
+    textAlign: 'center', // Centrar el título
+    backgroundColor: '#fcbf49', // Fondo dorado para el título
+    paddingVertical: 5,
+    borderRadius: 5, // Bordes redondeados
   },
   descriptionText: {
-    fontSize: 14,
-    color: '#003049',
+    fontSize: 16,  // Mantener un tamaño de fuente adecuado para leer fácilmente
+    color: '#333',  // Color de texto más suave (gris oscuro) para evitar el contraste demasiado fuerte
+    marginBottom: 15,  // Margen inferior para separar de otros elementos
+    lineHeight: 22,  // Mejorar el espaciado entre las líneas
+    textAlign: 'justify',  // Justificar el texto para darle un aspecto más ordenado
+    padding: 15,  // Añadir padding para no pegar el texto a los bordes
+    backgroundColor: '#fafafa',  // Fondo muy suave (blanco roto) para resaltar sin ser agresivo
+    borderRadius: 8,  // Bordes redondeados para suavizar la apariencia
+    shadowColor: '#000',  // Color de la sombra (ligera)
+    shadowOpacity: 0.05,  // Opacidad baja para una sombra sutil
+    shadowRadius: 4,  // Radio de la sombra
+    shadowOffset: { width: 0, height: 2 },  // Desplazamiento de la sombra
+    elevation: 2,  // Elevación para crear una pequeña sensación de profundidad
   },
   platformText: {
-    fontSize: 14,
-    color: '#003049',
-    marginBottom: 5,
+    fontSize: 15,
+    color: '#fff',
+    fontWeight: 'bold',
+    backgroundColor: '#003049',
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    borderRadius: 5,
+    alignSelf: 'flex-start',  // Alineación a la izquierda
+    marginBottom: 10,
+    marginLeft:6 // Ajuste el margen izquierdo si necesitas más espacio
   },
+  
   buttonContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -325,25 +346,30 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#000',
   },
-  closeButton: {
-    position: 'absolute',
-    top: 20,
-    left: 20,
-    backgroundColor: '#007BFF',
-    borderRadius: 30,
-    padding: 10,
-    zIndex: 10,
-    borderColor: '#ffffff', // Borde blanco para mejor visibilidad
-    borderWidth: 1, // Borde para definir el botón
-  },
-  closeButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
+ 
   fullScreenWebView: {
     flex: 1,
   },
+  closeButton: {
+    position: 'absolute',
+    bottom: -20,
+    left: 0, // Asegura que el botón esté alineado al borde izquierdo
+    width: '100%', // Ocupa todo el ancho de la pantalla
+    backgroundColor: '#fcbf49',
+    paddingVertical: 10, // Ajusta el padding para un mejor aspecto
+    paddingHorizontal: 20, // Ajusta el padding horizontal si es necesario
+    borderRadius: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10, // Asegúrate de que el botón esté por encima de otros elementos
+  },
+  
+  closeButtonText: {
+    color: '#fefae0',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  
 });
 
 export default AddVideoScreen;
